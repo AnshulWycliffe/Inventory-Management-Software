@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database - Inventory Management System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        
+
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Navigation remains the same -->
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>Inventory MS</h2>
+            </div>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('products') }}">Products</a></li>
+                <li><a href="{{ url_for('categories') }}">Categories</a></li>
+                <li><a href="{{ url_for('transactions') }}">Transactions</a></li>
+                <li><a href="{{ url_for('db') }}">Database</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header>
+                <h1>Database</h1>
+                <button class="add-btn" onclick="backupDatabase()">Backup Database</button>
+            </header>
+
+            <div class="database-stats">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-clipboard"></i> <!-- Icon for Total Products -->
+                    </div>
+                    <h3>Total Records</h3>
+                    <p class="stat-number">0</p>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-sitemap"></i> <!-- Icon for Total Products -->
+                    </div>
+                    <h3>Database Size</h3>
+                    <p class="stat-number" id="size">0 KB</p>
+                </div>
+            </div>
+
+            <div class="db-view-toggle">
+                <button class="view-toggle-btn active" onclick="toggleView('table')">Table Info</button>
+                <button class="view-toggle-btn" onclick="toggleView('tree')">Tree View</button>
+            </div>
+
+            <div class="table-view active">
+                <h2>Database Tables</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Table Name</th>
+                            <th>Records</th>
+
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablesList">
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="tree-view">
+                <div id="json-tree" class="json-tree" role="tree" aria-label="JSON structure"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const tables = ['products', 'categories', 'transactions'];
+        let fullDatabaseData = {};
+
+        function toggleView(view) {
+            document.querySelectorAll('.view-toggle-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.table-view, .tree-view').forEach(v => v.classList.remove('active'));
+
+            document.querySelector(`.${view}-view`).classList.add('active');
+            document.querySelector(`button[onclick="toggleView('${view}')"]`).classList.add('active');
+
+            if (view === 'tree') {
+                updateTreeView();
+            }
+        }
+
+        function renderJsonTree(json, container, indent = 0) {
+            Object.entries(json).forEach(([key, value]) => {
+                const type = Array.isArray(value) ? 'array' : typeof value;
+                const isExpandable = type === 'object' || type === 'array';
+
+                const node = document.createElement('div');
+                node.className = 'json-node';
+                node.style.marginLeft = `${indent * 20}px`;
+
+                if (isExpandable) {
+                    const toggle = document.createElement('button');
+                    toggle.className = 'json-toggle';
+                    toggle.textContent = '+';
+                    node.appendChild(toggle);
+
+                    const keySpan = document.createElement('span');
+                    keySpan.className = 'json-key';
+                    keySpan.textContent = `"${key}"`;
+                    node.appendChild(keySpan);
+
+                    const valueSpan = document.createElement('span');
+                    valueSpan.className = 'json-value';
+                    valueSpan.textContent = type === 'array' ? ': [' : ': {';
+                    node.appendChild(valueSpan);
+
+                    const children = document.createElement('div');
+                    children.className = 'json-children';
+                    children.style.display = 'none';
+
+                    renderJsonTree(value, children, indent + 1);
+                    node.appendChild(children);
+
+                    const closingBrace = document.createElement('span');
+                    closingBrace.className = 'json-value';
+                    closingBrace.textContent = type === 'array' ? ']' : '}';
+                    node.appendChild(closingBrace);
+
+                    toggle.onclick = () => {
+                        const isCollapsed = children.style.display === 'none';
+                        children.style.display = isCollapsed ? 'block' : 'none';
+                        toggle.textContent = isCollapsed ? '-' : '+';
+                    };
+                } else {
+                    const keySpan = document.createElement('span');
+                    keySpan.className = 'json-key';
+                    keySpan.textContent = `"${key}"`;
+                    node.appendChild(keySpan);
+
+                    const valueSpan = document.createElement('span');
+                    valueSpan.className = 'json-value';
+                    valueSpan.dataset.type = typeof value;
+                    valueSpan.textContent = `: ${JSON.stringify(value)}`;
+                    node.appendChild(valueSpan);
+                }
+
+                container.appendChild(node);
+            });
+        }
+
+        function updateTreeView() {
+            const treeContainer = document.getElementById('json-tree');
+            treeContainer.innerHTML = '';
+            renderJsonTree(fullDatabaseData, treeContainer);
+        }
+
+        function updateDatabaseStats() {
+            Promise.all(tables.map(table =>
+                fetch(`/api/data/get/nosql@db/${table}`).then(res => res.json().then(data => ({
+                    data,
+                    size: parseInt(res.headers.get('Content-Length') || 0, 10) // Extract Content-Length
+                })))
+            ))
+                .then(responses => {
+                    let totalRecords = 0;
+                    let totalSizeInBytes = 0;
+                    const tablesList = document.getElementById('tablesList');
+                    tablesList.innerHTML = '';
+
+                    // Build full database object for tree view
+                    fullDatabaseData = {};
+                    responses.forEach((response, index) => {
+                        const { data, size } = response;
+                        const tableName = tables[index];
+                        const recordCount = Object.keys(data || {}).length;
+
+                        fullDatabaseData[tableName] = data || {};
+                        totalRecords += recordCount;
+                        totalSizeInBytes += size;
+
+                        const row = `
+                <tr>
+                    <td>${tableName}</td>
+                    <td>${recordCount}</td>
+                    <td>
+                        <button class="edit-btn" onclick="exportTable('${tableName}')">
+                            <i class="fas fa-file-export"></i> Export</button>
+                        <button class="delete-btn" onclick="clearTable('${tableName}')">
+                            <i class="fas fa-trash"></i>  Clear</button>
+                    </td>
+                </tr>
+            `;
+                        tablesList.innerHTML += row;
+                    });
+
+                    // Update stats in UI
+                    document.querySelector('.database-stats .stat-card:nth-child(1) .stat-number')
+                        .textContent = totalRecords;
+
+                    const totalSizeInKB = (totalSizeInBytes / 1024).toFixed(2);
+                    const totalSizeInMB = (totalSizeInBytes / (1024 * 1024)).toFixed(2);
+
+                    document.querySelector('.database-stats .stat-card:nth-child(2) .stat-number')
+                        .textContent = `${totalSizeInKB} KB (${totalSizeInMB} MB)`;
+                })
+                .catch(error => console.error('Error fetching database stats:', error));
+        }
+        function backupDatabase() {
+            Promise.all(tables.map(table =>
+                fetch(`/api/data/get/nosql@db/${table}`).then(res => res.json())
+            ))
+                .then(responses => {
+                    const backup = {};
+                    tables.forEach((table, index) => {
+                        backup[table] = responses[index];
+                    });
+
+                    const dataStr = "data:text/json;charset=utf-8," +
+                        encodeURIComponent(JSON.stringify(backup, null, 2));
+
+                    const downloadAnchorNode = document.createElement('a');
+                    downloadAnchorNode.setAttribute("href", dataStr);
+                    downloadAnchorNode.setAttribute("download", "database_backup_" +
+                        new Date().toISOString().split('T')[0] + ".json");
+                    document.body.appendChild(downloadAnchorNode);
+                    downloadAnchorNode.click();
+                    downloadAnchorNode.remove();
+
+                    alert('Database backup created successfully!');
+                })
+                .catch(error => console.error('Error creating backup:', error));
+        }
+
+        function exportTable(tableName) {
+            fetch(`/api/data/get/nosql@db/${tableName}`)
+                .then(res => res.json())
+                .then(data => {
+                    const dataStr = "data:text/json;charset=utf-8," +
+                        encodeURIComponent(JSON.stringify(data, null, 2));
+
+                    const downloadAnchorNode = document.createElement('a');
+                    downloadAnchorNode.setAttribute("href", dataStr);
+                    downloadAnchorNode.setAttribute("download", `${tableName}_` +
+                        new Date().toISOString().split('T')[0] + ".json");
+                    document.body.appendChild(downloadAnchorNode);
+                    downloadAnchorNode.click();
+                    downloadAnchorNode.remove();
+                })
+                .catch(error => console.error('Error exporting table:', error));
+        }
+
+        function clearTable(tableName) {
+            if (confirm(`Are you sure you want to clear all records from ${tableName}?`)) {
+                fetch(`/api/data/remove/nosql@db/${tableName}`, {
+                    method: 'POST'
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.message) {
+                            alert(`${tableName} table cleared successfully!`);
+                            updateDatabaseStats();
+                        }
+                    })
+                    .catch(error => console.error('Error clearing table:', error));
+            }
+        }
+
+        // Rest of your existing functions remain the same...
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDatabaseStats();
+        });
+    </script>
+</body>
+
+</html>

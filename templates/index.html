@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Management System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>Inventory MS</h2>
+            </div>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('products') }}">Products</a></li>
+                <li><a href="{{ url_for('categories') }}">Categories</a></li>
+                <li><a href="{{ url_for('transactions') }}">Transactions</a></li>
+                <li><a href="{{ url_for('db') }}">Database</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header>
+                <h1>Dashboard</h1>
+                <div class="user-info">
+                    <span>Admin User</span>
+                </div>
+            </header>
+
+            <div class="dashboard-stats">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-box"></i> <!-- Icon for Total Products -->
+                    </div>
+                    <h3>Total Products</h3>
+                    <p class="stat-number">0</p>
+                    <p class="stat-change"></p>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-folder"></i> <!-- Icon for Categories -->
+                    </div>
+                    <h3>Categories</h3>
+                    <p class="stat-number"></p>
+                    <p class="stat-change"></p>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-exclamation-triangle"></i> <!-- Icon for Low Stock Items -->
+                    </div>
+                    <h3>Low Stock Items</h3>
+                    <p class="stat-number"></p>
+                    <p class="stat-change"></p>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-rupee-sign"></i>
+                        <!-- Icon for Total Value -->
+                    </div>
+                    <h3>Total Value</h3>
+                    <p class="stat-number"></p>
+                    <p class="stat-change"></p>
+                </div>
+            </div>
+
+            <div class="charts-container">
+                <div class="chart-card">
+                    <h3>Monthly Sales Trend</h3>
+                    <canvas id="salesChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Category Distribution</h3>
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+
+            <div class="recent-activity">
+                <h2>Recent Transaction</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Action</th>
+                            <th>Quantity</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Dynamically Adding Rows -->
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function formatIndianCurrency(number) {
+            return new Intl.NumberFormat('en-IN', {
+                style: 'currency',
+                currency: 'INR',
+                maximumFractionDigits: 0
+            }).format(number);
+        }
+        // Main function to update all dashboard components
+        function updateDashboard() {
+            updateDashboardStats();
+            updateSalesChart();
+            updateCategoryChart();
+            updateRecentActivity();
+        }
+
+        // Update dashboard statistics
+        async function updateDashboardStats() {
+            try {
+                const [products, categories, transactions] = await Promise.all([
+                    fetch('/api/data/get/nosql@db/products').then(res => res.json()),
+                    fetch('/api/data/get/nosql@db/categories').then(res => res.json()),
+                    fetch('/api/data/get/nosql@db/transactions').then(res => res.json())
+                ]);
+
+                // Calculate statistics
+                const stats = {
+                    totalProducts: Object.keys(products).length,
+                    totalCategories: Object.keys(categories).length,
+                    lowStockItems: Object.values(products).filter(p => p.stock <= (p.alertLevel || 10)).length,
+                    totalValue: Object.values(products).reduce((sum, p) => sum + (p.stock * p.price), 0)
+
+                };
+
+                // Update DOM
+                document.querySelector('.stat-card:nth-child(1) .stat-number').textContent = stats.totalProducts;
+                document.querySelector('.stat-card:nth-child(2) .stat-number').textContent = stats.totalCategories;
+                document.querySelector('.stat-card:nth-child(3) .stat-number').textContent = stats.lowStockItems;
+                document.querySelector('.stat-card:nth-child(4) .stat-number').textContent = formatIndianCurrency(stats.totalValue);
+
+            } catch (error) {
+                console.error('Error updating dashboard stats:', error);
+            }
+        }
+
+        // Update sales chart
+        async function updateSalesChart() {
+            try {
+                const transactions = await fetch('/api/data/get/nosql@db/transactions').then(res => res.json());
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const salesData = new Array(6).fill(0);
+                updateRecentActivity(transactions)
+                const today = new Date();
+                Object.values(transactions).forEach(transaction => {
+                    if (transaction.type === 'out') {
+                        const transDate = new Date(transaction.date);
+                        const monthDiff = (today.getMonth() - transDate.getMonth()) +
+                            (12 * (today.getFullYear() - transDate.getFullYear()));
+
+                        if (monthDiff < 6) {
+                            salesData[5 - monthDiff] += transaction.totalValue;
+                        }
+                    }
+                });
+
+                const labels = Array.from({ length: 6 }, (_, i) => {
+                    const d = new Date();
+                    d.setMonth(d.getMonth() - (5 - i));
+                    return monthNames[d.getMonth()];
+                });
+
+                new Chart(document.getElementById('salesChart').getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Sales (₹)',
+                            data: salesData,
+                            borderColor: '#4299e1',
+                            tension: 0.4,
+                            fill: true,
+                            backgroundColor: 'rgba(66, 153, 225, 0.1)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function (context) {
+                                        return formatIndianCurrency(context.raw);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function (value) {
+                                        return '₹' + (value / 1000) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error updating sales chart:', error);
+            }
+        }
+
+        // Update category chart
+        async function updateCategoryChart() {
+            try {
+                const products = await fetch('/api/data/get/nosql@db/products').then(res => res.json());
+                const categoryData = {};
+
+                Object.values(products).forEach(product => {
+                    categoryData[product.category] = (categoryData[product.category] || 0) + product.stock;
+                });
+
+                new Chart(document.getElementById('categoryChart').getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(categoryData),
+                        datasets: [{
+                            data: Object.values(categoryData),
+                            backgroundColor: [
+                                '#4299e1', '#48bb78', '#ed8936', '#9f7aea', '#f56565'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right'
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error updating category chart:', error);
+            }
+        }
+
+        function formatDate(dateString) {
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString('en-IN', options);
+        }
+
+        // Function to get status badge HTML
+        function getStatusBadge(status) {
+            const statusClasses = {
+                'pending': 'pending',
+                'completed': 'completed',
+                'cancelled': 'cancelled'
+            };
+
+            return `<span class="status ${statusClasses[status] || ''}">${status.charAt(0).toUpperCase() + status.slice(1)}</span>`;
+        }
+
+        // Enhanced function to update recent activity table
+        function updateRecentActivity(transactions) {
+            const recentActivityBody = document.querySelector('.recent-activity tbody');
+            const recentActivityTable = document.querySelector('.recent-activity table');
+
+            // Update table headers to include more information
+            recentActivityTable.querySelector('thead').innerHTML = `
+        <tr>
+            <th>Date</th>
+            <th>Product</th>
+            <th>Type</th>
+            <th>Quantity</th>
+            <th>Value</th>
+            <th>Status</th>
+            <th>Stock Level</th>
+            <th>Notes</th>
+        </tr>
+    `;
+
+            // Clear existing rows
+            recentActivityBody.innerHTML = '';
+
+            // Sort transactions by date (most recent first)
+            const sortedTransactions = Object.entries(transactions)
+                .map(([id, transaction]) => ({ id, ...transaction }))
+                .sort((a, b) => new Date(b.date) - new Date(a.date))
+                .slice(0, 5); // Get only last 5 transactions
+
+            // Add new rows
+            sortedTransactions.forEach(transaction => {
+                const row = document.createElement('tr');
+
+                // Calculate the stock change indicator
+                const stockChangeClass = transaction.type === 'in' ? 'text-green-600' : 'text-red-600';
+                const stockChangeSymbol = transaction.type === 'in' ? '+' : '-';
+
+                // Format the value with Indian currency
+                const formattedValue = new Intl.NumberFormat('en-IN', {
+                    style: 'currency',
+                    currency: 'INR'
+                }).format(transaction.totalValue);
+
+                // Create row content
+                row.innerHTML = `
+                    <td>${formatDate(transaction.date)}</td>
+                    <td>
+                        <div class="product-cell">
+                            <span class="product-name">${transaction.productName}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <p class="transaction-type ${transaction.type === 'in' ? 'stock-in' : 'stock-out'}">
+                            ${transaction.type === 'in' ? 'Stock In' : 'Stock Out'}
+                        </p>
+                    </td>
+                    <td class="${stockChangeClass}">
+                        ${stockChangeSymbol}${transaction.quantity}
+                    </td>
+                    <td>${formattedValue}</td>
+                    <td>${getStatusBadge(transaction.status)}</td>
+                    <td>
+                        <span class="stock-change">
+                            ${transaction.stockBefore} → ${transaction.stockAfter}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="notes-cell" title="${transaction.notes || ''}">
+                            ${transaction.notes || '-'}
+                        </span>
+                    </td>
+                `;
+
+                recentActivityBody.appendChild(row);
+            });
+
+        }
+
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDashboard();
+
+            // Refresh dashboard every 5 minutes
+            setInterval(updateDashboardStats, 300000);
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transactions - Inventory Management System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>Inventory MS</h2>
+            </div>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('products') }}">Products</a></li>
+                <li><a href="{{ url_for('categories') }}">Categories</a></li>
+                <li><a href="{{ url_for('transactions') }}">Transactions</a></li>
+                <li><a href="{{ url_for('db') }}">Database</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header>
+                <h1>Transactions</h1>
+                <button class="add-btn" onclick="openTransactionModal()">New Transaction</button>
+            </header>
+
+            <div class="transaction-filters">
+                <div class="date-range">
+                    <input type="date" id="startDate" placeholder="Start Date">
+                    <input type="date" id="endDate" placeholder="End Date">
+                </div>
+                <select id="typeFilter">
+                    <option value="">All Types</option>
+                    <option value="in">Stock In</option>
+                    <option value="out">Stock Out</option>
+                </select>
+                <select id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search products...">
+                </div>
+                <button class="filter-btn" onclick="applyFilters()">Apply Filters</button>
+            </div>
+
+            <div class="transactions-list">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Transaction ID</th>
+                            <th>Product</th>
+                            <th>Type</th>
+                            <th>Quantity</th>
+                            <th>Total Value</th>
+                            <th>Status</th>
+                            <th>Stock Level</th>
+                            <th>Notes</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionsList">
+                        <!-- Transactions will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Add Transaction Modal -->
+            <div id="addTransactionModal" class="modal">
+                <div class="modal-content">
+                    <h2>New Transaction</h2>
+                    <form id="addTransactionForm" onsubmit="submitTransaction(event)">
+                        <div class="form-group">
+                            <label>Product</label>
+                            <select required name="productId" onchange="updateProductDetails()">
+                                <option value="">Select Product</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Current Stock</label>
+                            <input type="text" name="currentStock" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Unit Price</label>
+                            <input type="number" name="unitPrice" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Transaction Type</label>
+                            <select required name="type" onchange="validateQuantity()">
+                                <option value="in">Stock In</option>
+                                <option value="out">Stock Out</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Quantity</label>
+                            <input type="number" required name="quantity" onchange="calculateTotal()" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Total Value</label>
+                            <input type="number" name="totalValue" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Notes</label>
+                            <textarea name="notes"></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="submit-btn">Add Transaction</button>
+                            <button type="button" class="cancel-btn" onclick="closeTransactionModal()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Edit Transaction Modal -->
+            <div id="editTransactionModal" class="modal">
+                <div class="modal-content">
+                    <h2>Edit Transaction</h2>
+                    <form id="editTransactionForm" onsubmit="updateTransaction(event)">
+                        <div class="form-group">
+                            <label>Product</label>
+                            <input type="text" name="product" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Transaction Type</label>
+                            <input type="text" name="type" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Quantity</label>
+                            <input type="number" name="quantity" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Unit Price</label>
+                            <input type="number" name="unitPrice" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Total Value</label>
+                            <input type="number" name="totalValue" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <select name="status" required>
+                                <option value="pending">Pending</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Notes</label>
+                            <textarea name="notes"></textarea>
+                        </div>
+                        <input type="hidden" name="transactionId">
+                        <input type="hidden" name="productId">
+                        <div class="form-actions">
+                            <button type="submit" class="submit-btn">Update Transaction</button>
+                            <button type="button" class="cancel-btn" onclick="closeEditModal()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Global variables to store state
+        let allProducts = {};
+        let allTransactions = {};
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchProducts().then(() => {
+                populateProductDropdown();
+                fetchTransactions();
+            });
+        });
+
+        // Fetch all products
+        async function fetchProducts() {
+            try {
+                const response = await fetch('/api/data/get/nosql@db/products');
+                allProducts = await response.json();
+            } catch (error) {
+                console.error('Error fetching products:', error);
+            }
+        }
+
+        // Populate product dropdown
+        function populateProductDropdown() {
+            const productDropdown = document.querySelector('#addTransactionForm select[name="productId"]');
+            productDropdown.innerHTML = '<option value="">Select Product</option>';
+            
+            Object.entries(allProducts).forEach(([id, product]) => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = product.name;
+                productDropdown.appendChild(option);
+            });
+        }
+
+        // Update product details when product is selected
+        function updateProductDetails() {
+            const form = document.getElementById('addTransactionForm');
+            const productId = form.productId.value;
+            const product = allProducts[productId];
+
+            if (product) {
+                form.currentStock.value = product.stock;
+                form.unitPrice.value = product.price;
+                validateQuantity();
+                calculateTotal();
+            }
+        }
+
+        // Validate quantity based on transaction type and current stock
+        function validateQuantity() {
+            const form = document.getElementById('addTransactionForm');
+            const quantity = form.quantity;
+            const type = form.type.value;
+            const currentStock = parseInt(form.currentStock.value);
+
+            if (type === 'out') {
+                quantity.max = currentStock;
+                if (parseInt(quantity.value) > currentStock) {
+                    quantity.value = currentStock;
+                }
+            } else {
+                quantity.removeAttribute('max');
+            }
+            calculateTotal();
+        }
+
+        // Calculate total value
+        function calculateTotal() {
+            const form = document.getElementById('addTransactionForm');
+            const quantity = parseInt(form.quantity.value) || 0;
+            const unitPrice = parseFloat(form.unitPrice.value) || 0;
+            form.totalValue.value = (quantity * unitPrice).toFixed(2);
+        }
+
+        // Submit new transaction
+        async function submitTransaction(event) {
+            event.preventDefault();
+            const form = event.target;
+            const productId = form.productId.value;
+            const product = allProducts[productId];
+            const quantity = parseInt(form.quantity.value);
+            const type = form.type.value;
+
+            if (type === 'out' && quantity > product.stock) {
+                alert('Cannot process transaction: Insufficient stock');
+                return;
+            }
+
+            const transaction = {
+                date: new Date().toISOString().split('T')[0],
+                productId: productId,
+                productName: product.name,
+                type: type,
+                quantity: quantity,
+                unitPrice: parseFloat(form.unitPrice.value),
+                totalValue: parseFloat(form.totalValue.value),
+                status: 'pending',
+                stockBefore: product.stock,
+                stockAfter: type === 'in' ? product.stock + quantity : product.stock - quantity,
+                notes: form.notes.value
+            };
+
+            try {
+                // Add transaction
+                const transactionId = 'tranx_' + Date.now();
+                await fetch(`/api/data/set/nosql@db/transactions/${transactionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: transaction })
+                });
+
+                // Update product stock
+                const updatedProduct = {
+                    ...product,
+                    stock: transaction.stockAfter
+                };
+
+                await fetch(`/api/data/set/nosql@db/products/${productId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: updatedProduct })
+                });
+
+                alert('Transaction added successfully!');
+                closeTransactionModal();
+                await fetchProducts();
+                fetchTransactions();
+            } catch (error) {
+                console.error('Error processing transaction:', error);
+                alert('Error processing transaction');
+            }
+        }
+
+        // Fetch all transactions
+        async function fetchTransactions() {
+            try {
+                const response = await fetch('/api/data/get/nosql@db/transactions');
+                allTransactions = await response.json();
+                displayTransactions(allTransactions);
+            } catch (error) {
+                console.error('Error fetching transactions:', error);
+            }
+        }
+
+        // Display transactions
+        function displayTransactions(transactions) {
+            const tbody = document.getElementById('transactionsList');
+            tbody.innerHTML = '';
+
+            Object.entries(transactions).forEach(([id, transaction]) => {
+                const row = `
+                    <tr>
+                        <td>${transaction.date}</td>
+                        <td>${id}</td>
+                        <td>${transaction.productName}</td>
+                        <td><p class="stock ${transaction.type}">${transaction.type === 'in' ? 'Stock In' : 'Stock Out'}</p></td>
+                        <td>${transaction.type === 'in' ? '+' : '-'}${transaction.quantity}</td>
+                        <td>₹${transaction.totalValue.toLocaleString('en-IN')}</td>
+                        <td><span class="status ${transaction.status}">${transaction.status}</span></td>
+                        <td>${transaction.stockBefore} → ${transaction.stockAfter}</td>
+                        <td>${transaction.notes || ''}</td>
+                        <td>
+                            <button class="edit-btn" onclick="editTransaction('${id}')" ${transaction.status === 'cancelled' ? 'disabled' : ''}>
+                                <i class="fas fa-edit"></i>     </button>
+                            <button class="delete-btn" onclick="deleteTransaction('${id}')" ${transaction.status !== 'pending' ? 'disabled' : ''}>
+                                <i class="fas fa-trash"></i> </button>
+                        </td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        // Apply filters
+        function applyFilters() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const type = document.getElementById('typeFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            const search = document.getElementById('searchInput').value.toLowerCase();
+
+            const filteredTransactions = Object.fromEntries(
+                Object.entries(allTransactions).filter(([_, transaction]) => {
+                    const dateMatches = (!startDate || transaction.date >= startDate) &&
+                                      (!endDate || transaction.date <= endDate);
+                    const typeMatches = !type || transaction.type === type;
+                    const statusMatches = !status || transaction.status === status;
+                    const searchMatches = !search || 
+                                        transaction.productName.toLowerCase().includes(search) ||
+                                        transaction.notes.toLowerCase().includes(search);
+                    
+                    return dateMatches && typeMatches && statusMatches && searchMatches;
+                })
+            );
+
+            displayTransactions(filteredTransactions);
+        }
+
+        // Edit transaction
+        async function editTransaction(transactionId) {
+            const transaction = allTransactions[transactionId];
+            const form = document.getElementById('editTransactionForm');
+            
+            form.product.value = transaction.productName;
+            form.type.value = transaction.type === 'in' ? 'Stock In' : 'Stock Out';
+            form.quantity.value = transaction.quantity;
+            form.unitPrice.value = transaction.unitPrice;
+            form.totalValue.value = transaction.totalValue;
+            form.status.value = transaction.status;
+            form.notes.value = transaction.notes;
+            form.transactionId.value = transactionId;
+            form.productId.value = transaction.productId;
+
+            document.getElementById('editTransactionModal').style.display = 'block';
+        }
+
+        // Update transaction
+        async function updateTransaction(event) {
+            event.preventDefault();
+            const form = event.target;
+            const transactionId = form.transactionId.value;
+            const transaction = allTransactions[transactionId];
+            const newStatus = form.status.value;
+            
+            if (transaction.status === newStatus) {
+                alert('No changes made');
+                closeEditModal();return;
+            }
+
+            const productId = form.productId.value;
+            const product = allProducts[productId];
+
+            try {
+                if (newStatus === 'cancelled' && transaction.status === 'completed') {
+                    // Reverse the stock changes when cancelling a completed transaction
+                    const stockChange = transaction.type === 'in' ? -transaction.quantity : transaction.quantity;
+                    const updatedProduct = {
+                        ...product,
+                        stock: product.stock + stockChange
+                    };
+
+                    // Update product stock
+                    await fetch(`/api/data/set/nosql@db/products/${productId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ value: updatedProduct })
+                    });
+                }
+
+                // Update transaction status
+                const updatedTransaction = {
+                    ...transaction,
+                    status: newStatus,
+                    notes: form.notes.value
+                };
+
+                await fetch(`/api/data/set/nosql@db/transactions/${transactionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: updatedTransaction })
+                });
+
+                alert('Transaction updated successfully!');
+                closeEditModal();
+                await fetchProducts();
+                fetchTransactions();
+            } catch (error) {
+                console.error('Error updating transaction:', error);
+                alert('Error updating transaction');
+            }
+        }
+
+        // Delete transaction
+        async function deleteTransaction(transactionId) {
+            const transaction = allTransactions[transactionId];
+            
+            if (transaction.status !== 'pending') {
+                alert('Only pending transactions can be deleted');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to delete this transaction?')) {
+                return;
+            }
+
+            try {
+                await fetch(`/api/data/remove/nosql@db/transactions/${transactionId}`, {
+                    method: 'POST'
+                });
+
+                alert('Transaction deleted successfully!');
+                fetchTransactions();
+            } catch (error) {
+                console.error('Error deleting transaction:', error);
+                alert('Error deleting transaction');
+            }
+        }
+
+        // Modal functions
+        function openTransactionModal() {
+            document.getElementById('addTransactionModal').style.display = 'block';
+            document.getElementById('addTransactionForm').reset();
+        }
+
+        function closeTransactionModal() {
+            document.getElementById('addTransactionModal').style.display = 'none';
+            document.getElementById('addTransactionForm').reset();
+        }
+
+        function closeEditModal() {
+            document.getElementById('editTransactionModal').style.display = 'none';
+            document.getElementById('editTransactionForm').reset();
+        }
+
+        
+    </script>
+</body>
+</html>

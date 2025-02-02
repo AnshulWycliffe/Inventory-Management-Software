@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Categories - Inventory Management System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>Inventory MS</h2>
+            </div>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('products') }}">Products</a></li>
+                <li><a href="{{ url_for('categories') }}">Categories</a></li>
+                <li><a href="{{ url_for('transactions') }}">Transactions</a></li>
+                <li><a href="{{ url_for('db') }}">Database</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header>
+                <h1>Categories</h1>
+                <button class="add-btn" onclick="openAddModal()">Add Category</button>
+            </header>
+
+            <div class="categories-grid">
+
+            </div>
+
+            <!-- Add Category Modal -->
+            <div id="addCategoryModal" class="modal">
+                <div class="modal-content">
+                    <h2>Add New Category</h2>
+                    <form onsubmit="submitProduct(event)">
+                        <div class="form-group">
+                            <label>Category Name</label>
+                            <input type="text" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea name="desc" required></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="submit-btn">Add Category</button>
+                            <button type="button" class="cancel-btn" onclick="closeAddModal()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Edit Category Modal -->
+            <div id="editCategoryModal" class="modal">
+                <div class="modal-content">
+                    <h2>Edit Category</h2>
+                    <form id="editCategoryForm">
+                        <div class="form-group">
+                            <label>Category Name</label>
+                            <input type="text" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea name="desc" required></textarea>
+                        </div>
+                        <input type="hidden" name="categoryId">
+                        <div class="form-actions">
+                            <button type="submit" class="submit-btn">Update Category</button>
+                            <button type="button" class="cancel-btn" onclick="closeEditModal()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </main>
+    </div>
+</body>
+<script>
+        // Constants
+        const categoriesContainer = document.querySelector('.categories-grid');
+        const addCategoryModal = document.getElementById('addCategoryModal');
+
+        // Open Add Category Modal
+        function openAddModal() {
+            addCategoryModal.style.display = 'block';
+        }
+
+        // Close Add Category Modal
+        function closeAddModal() {
+            addCategoryModal.style.display = 'none';
+            addCategoryModal.querySelector('form').reset();
+        }
+
+        // Close Edit Modal
+        function closeEditModal() {
+            document.getElementById('editCategoryModal').style.display = 'none';
+            document.getElementById('editCategoryForm').reset();
+        }
+
+        // Submit Category Function
+        function submitCategory(event) {
+            event.preventDefault();
+            const form = event.target;
+            const newCategoryName = form.name.value;
+
+            // First check if category name already exists
+            fetch('/api/data/get/nosql@db/categories')
+                .then(response => response.json())
+                .then(categories => {
+                    // Check if category name already exists either as a key or as a name
+                    const categoryExists = Object.entries(categories).some(
+                        ([key, category]) =>
+                            category.name.toLowerCase() === newCategoryName.toLowerCase() ||
+                            key.toLowerCase() === newCategoryName.toLowerCase()
+                    );
+
+                    if (categoryExists) {
+                        alert('A category with this name already exists. Please choose a different name.');
+                        return;
+                    }
+
+                    // If category doesn't exist, proceed with adding it
+                    const formData = {
+                        value: {
+                            name: newCategoryName,
+                            desc: form.desc.value
+                        }
+                    };
+
+                    return fetch(`/api/data/set/nosql@db/categories/${newCategoryName}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+                })
+                .then(response => {
+                    if (response && response.ok) {
+                        return response.json();
+                    }
+                })
+                .then(data => {
+                    if (data && data.message) {
+                        alert('Category added successfully!');
+                        closeAddModal();
+                        fetchCategories();
+                    }
+                })
+                .catch(error => console.error('Error adding category:', error));
+        }
+
+        // Fetch Categories
+        function fetchCategories() {
+            Promise.all([
+                fetch('/api/data/get/nosql@db/categories').then(res => res.json()),
+                fetch('/api/data/get/nosql@db/products').then(res => res.json())
+            ])
+                .then(([categories, products]) => {
+                    // Compute the sums for each category
+                    Object.entries(categories).forEach(([categoryName, categoryData]) => {
+                        // Filter products belonging to this category
+                        const categoryProducts = Object.values(products).filter(
+                            product => product.category === categoryData.name
+                        );
+
+                        // Calculate the total product count and total value
+                        categoryData.prod = categoryProducts.reduce(
+                            (totalStock, product) => totalStock + product.stock,
+                            0
+                        );
+                        categoryData.value = categoryProducts.reduce(
+                            (total, product) => total + product.price * product.stock,
+                            0
+                        );
+                    });
+
+                    // Display the updated categories with computed values
+                    displayCategories(categories);
+                })
+                .catch(error => console.error('Error fetching data:', error));
+        }
+
+        // Display Categories
+        function displayCategories(categories) {
+            categoriesContainer.innerHTML = ''; // Clear existing content
+
+            Object.entries(categories).forEach(([id, category]) => {
+                const categoryCard = `
+                    <div class="category-card" data-category-id="${id}">
+                        <div class="category-header">
+                            <h3 class="category-title">${category.name}</h3>
+                        </div>
+                        
+                        <p class="category-description">${category.desc}</p>
+                        
+                        <div class="category-stats">
+                            <p><i class="fas fa-box"></i> Stocks: <span>${category.prod}</span></p>
+                            <p><i class="fas fa-rupee-sign"></i> Total Value: ₹<span>${category.value.toLocaleString('en-IN')}</span></p>
+                        </div>
+                        
+                        <div class="category-actions">
+                            <button class="btn edit-btn" onclick="editCategory('${id}')">
+                                <i class="fas fa-edit"></i> Edit
+                            </button>
+                            <button class="btn delete-btn" onclick="deleteCategory('${id}')">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+
+                `;
+                categoriesContainer.insertAdjacentHTML('beforeend', categoryCard);
+            });
+        }
+        // Delete Category
+        function deleteCategory(categoryId) {
+            if (confirm('Are you sure you want to delete this category? This will affect all products in this category.')) {
+                fetch(`/api/data/get/nosql@db/categories/${categoryId}`)
+                    .then(response => response.json())
+                    .then(category => {
+                        // First update all products in this category
+                        return fetch('/api/data/get/nosql@db/products')
+                            .then(response => response.json())
+                            .then(products => {
+                                const updatePromises = Object.entries(products)
+                                    .filter(([_, product]) => product.category === category.name)
+                                    .map(([productId, product]) => {
+                                        const updatedProduct = {
+                                            value: {
+                                                ...product,
+                                                category: 'Uncategorized'
+                                            }
+                                        };
+                                        return fetch(`/api/data/set/nosql@db/products/${productId}`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(updatedProduct)
+                                        });
+                                    });
+                                return Promise.all(updatePromises);
+                            })
+                            .then(() => {
+                                // Then delete the category
+                                return fetch(`/api/data/remove/nosql@db/categories/${categoryId}`, {
+                                    method: 'POST'
+                                });
+                            });
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.message) {
+                            alert('Category deleted successfully! Products have been moved to Uncategorized.');
+                            fetchCategories();
+                        }
+                    })
+                    .catch(error => console.error('Error deleting category:', error));
+            }
+        }
+
+        // Edit Category
+        function editCategory(categoryId) {
+            openEditModal(categoryId);
+        }
+        
+        // Open Edit Modal
+        function openEditModal(categoryId) {
+            fetch(`/api/data/get/nosql@db/categories/${categoryId}`)
+                .then(response => response.json())
+                .then(category => {
+                    const form = document.getElementById('editCategoryForm');
+                    form.name.value = category.name;
+                    form.desc.value = category.desc;
+                    form.categoryId.value = categoryId;
+                    form.dataset.oldName = category.name; // This is crucial - make sure we store the original name
+                    document.getElementById('editCategoryModal').style.display = 'block';
+                })
+                .catch(error => console.error('Error fetching category:', error));
+        }
+        
+        // Update Product Categories
+        async function updateProductCategories(oldCategoryName, newCategoryName) {
+            try {
+                // Get all products first
+                const response = await fetch('/api/data/get/nosql@db/products');
+                const products = await response.json();
+
+                // Find all products that need updating
+                const productsToUpdate = Object.entries(products).filter(([_, product]) =>
+                    product.category.toLowerCase() === oldCategoryName.toLowerCase()
+                );
+
+                console.log('Found products to update:', productsToUpdate);
+
+                // Update each product one at a time to ensure all updates complete
+                for (const [productId, product] of productsToUpdate) {
+                    const updatedProduct = {
+                        value: {
+                            ...product,
+                            category: newCategoryName
+                        }
+                    };
+
+                    console.log('Updating product:', productId);
+
+                    const updateResponse = await fetch(`/api/data/set/nosql@db/products/${productId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updatedProduct)
+                    });
+
+                    const updateResult = await updateResponse.json();
+                    if (!updateResult.message) {
+                        throw new Error(`Failed to update product ${productId}`);
+                    }
+
+                    console.log('Successfully updated product:', productId);
+                }
+
+                console.log(`Completed updating ${productsToUpdate.length} products`);
+                return true;
+            } catch (error) {
+                console.error('Error in updateProductCategories:', error);
+                throw error;
+            }
+        }// Initialize Page
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchCategories();
+
+            // Add Category Form Submission
+            document.querySelector('#addCategoryModal form').addEventListener('submit', submitCategory);
+
+            // Edit Category Form Submission
+            document.getElementById('editCategoryForm').addEventListener('submit', async function (event) {
+                event.preventDefault();
+                try {
+                    const form = event.target;
+                    const categoryId = form.categoryId.value;
+                    const oldName = form.dataset.oldName;
+                    const newName = form.name.value;
+
+                    console.log('Starting category update:', { oldName, newName, categoryId });
+
+                    // Get existing categories
+                    const categoriesResponse = await fetch('/api/data/get/nosql@db/categories');
+                    const categories = await categoriesResponse.json();
+
+                    // Check for existing category name
+                    const nameExists = Object.entries(categories).some(
+                        ([key, category]) =>
+                            (category.name.toLowerCase() === newName.toLowerCase() ||
+                                key.toLowerCase() === newName.toLowerCase()) &&
+                            key !== categoryId
+                    );
+
+                    if (nameExists) {
+                        alert('A category with this name already exists. Please choose a different name.');
+                        return;
+                    }
+
+                    const formData = {
+                        value: {
+                            name: newName,
+                            desc: form.desc.value
+                        }
+                    };
+
+                    if (categoryId !== newName) {
+                        // Create new category
+                        const createResponse = await fetch(`/api/data/set/nosql@db/categories/${newName}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(formData)
+                        });
+                        const createResult = await createResponse.json();
+
+                        if (!createResult.message) {
+                            throw new Error('Failed to create new category');
+                        }
+
+                        // Update all products
+                        await updateProductCategories(oldName, newName);
+
+                        // Delete old category
+                        const deleteResponse = await fetch(`/api/data/remove/nosql@db/categories/${categoryId}`, {
+                            method: 'POST'
+                        });
+                        const deleteResult = await deleteResponse.json();
+
+                        if (!deleteResult.message) {
+                            throw new Error('Failed to delete old category');
+                        }
+                    } else {
+                        // Update existing category
+                        const updateResponse = await fetch(`/api/data/set/nosql@db/categories/${categoryId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(formData)
+                        });
+                        const updateResult = await updateResponse.json();
+
+                        if (!updateResult.message) {
+                            throw new Error('Failed to update category');
+                        }
+
+                        if (oldName !== newName) {
+                            await updateProductCategories(oldName, newName);
+                        }
+                    }
+
+                    alert('Category updated successfully!');
+                    closeEditModal();
+                    fetchCategories();
+                } catch (error) {
+                    console.error('Error in form submission:', error);
+                    alert('Error updating category. Please try again.');
+                }
+            });
+            // Make sure we're setting the old name correctly when opening the edit modal
+
+        });
+</script>
+
+</html>
