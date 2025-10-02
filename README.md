@@ -42,8 +42,6 @@ Ensure you have Python 3.8+ installed on your system.
     This project likely uses Flask. Install it along with any other required packages.
     ```bash
     pip install Flask
-    # If there's a requirements.txt file, use:
-    # pip install -r requirements.txt
     ```
 
 4.  **Database Setup:**
